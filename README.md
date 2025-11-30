@@ -1,6 +1,6 @@
 NetAuditor is an automated network security assessment tool that performs comprehensive scanning, auditing, and evidence collection for security assessments and penetration testing.
 
-Pipeline:
+⚙️ Pipeline:
 
     Nmap - Port scanning and service detection
     SSH-Audit - SSH configuration and cipher analysis
@@ -19,7 +19,7 @@ Pipeline:
     ✅ Screenshot generation with color preservation
     ✅ Support for single target or batch file processing
 
-🔧 Installation
+# 🔧 Installation
 Prerequisites
 
 System Requirements:
@@ -28,52 +28,69 @@ System Requirements:
     Python 3.7+
     Root/sudo access (for raw socket scanning)
 
-Step 1: Install System Dependencies
-bash
+### Step 1: Install System Dependencies
 
-# Update package list
+
+##### Update package list
+```
 sudo apt update
-
-# Install required tools
+```
+##### Install required tools
+```
 sudo apt install -y nmap python3 python3-pip
-
-# Install ssh-audit
+```
+##### Install ssh-audit
+```
 sudo apt install -y ssh-audit
-# OR install via pip if not available
+```
+##### OR install via pip if not available
+```
 pip3 install ssh-audit --break-system-packages
+```
 
-# Install testssl.sh
+##### Install testssl.sh
+```
 git clone --depth 1 https://github.com/drwetter/testssl.sh.git
 sudo ln -s $(pwd)/testssl.sh/testssl.sh /usr/local/bin/testssl
 
-Step 2: Install Python Dependencies
+```
+### Step 2: Install Python Dependencies
 bash
 
-# Install Python packages
+##### Install Python packages
+```
 pip3 install python-nmap Pillow --break-system-packages
+```
 
-Step 3: Fix python-nmap Library (REQUIRED)
+##### **Step 3: Fix python-nmap Library (REQUIRED)**
 
-The default python-nmap library doesn't include the tunnel attribute. You need to patch it manually:
-Location of the file to modify:
-bash
+**The default python-nmap library doesn't include the tunnel attribute. You need to patch it manually:**
+**Location of the file to modify:**
 
-# Find the nmap.py file location
+
+##### Find the nmap.py file location
+
+```
 python3 -c "import nmap; print(nmap.__file__)"
-# Typical locations:
-# /usr/local/lib/python3.x/dist-packages/nmap/nmap.py
-# ~/.local/lib/python3.x/site-packages/nmap/nmap.py
 
-Edit the file:
-bash
+ Typical locations:
+ /usr/local/lib/python3.x/dist-packages/nmap/nmap.py
+ ~/.local/lib/python3.x/site-packages/nmap/nmap.py
 
+```
+**Edit the file:**
+```
 sudo nano /usr/local/lib/python3.11/dist-packages/nmap/nmap.py
-# (adjust path based on your Python version)
+```
+ (adjust path based on your Python version)
 
-Find this section (around line 600-650):
+Find this section (around line 460-480):
 python
-
+```
 name = product = version = extrainfo = conf = cpe = ""
+```
+
+```
 for dname in dport.findall("service"):
     name = dname.get("name")
     if dname.get("product"):
@@ -87,10 +104,14 @@ for dname in dport.findall("service"):
     for dcpe in dname.findall("cpe"):
         cpe = dcpe.text
 
+```
 Replace it with:
-python
 
+```
 name = product = version = extrainfo = conf = cpe = tunnel = ""
+```
+
+```
 for dname in dport.findall("service"):
     name = dname.get("name")
     if dname.get("product"):
@@ -105,10 +126,12 @@ for dname in dport.findall("service"):
         tunnel = dname.get("tunnel")
     for dcpe in dname.findall("cpe"):
         cpe = dcpe.text
+```
 
 Find the dictionary section (a few lines below):
-python
 
+
+```
 scan_result["scan"][host][proto][port] = {
     "state": state,
     "reason": reason,
@@ -119,10 +142,12 @@ scan_result["scan"][host][proto][port] = {
     "conf": conf,
     "cpe": cpe,
 }
+```
 
 Add the tunnel field:
-python
 
+
+```
 scan_result["scan"][host][proto][port] = {
     "state": state,
     "reason": reason,
@@ -134,45 +159,58 @@ scan_result["scan"][host][proto][port] = {
     "cpe": cpe,
     "tunnel": tunnel,
 }
+```
 
-# Scan a single IP
+
+# SCAN
+##### Scan a single IP
 sudo python3 netauditor.py -t 192.168.1.1
 
-# Scan a single domain
+##### Scan a single domain
 sudo python3 netauditor.py -t example.com
 
 Multiple Targets
 
 
-# Create a targets file
+##### Create a targets file
+```
 cat > targets.txt <<EOF
 192.168.1.1
 192.168.1.10
 10.0.0.5
 example.com
 EOF
+```
 
-# Scan all targets
+##### Scan all targets
+```
 sudo python3 netauditor.py -f targets.txt
+```
 
-# Custom port range
+##### Custom port range
+```
 sudo python3 netauditor.py -t 192.168.1.1 -p 1-1000
+```
 
-# Custom nmap arguments
+##### Custom nmap arguments
+```
 sudo python3 netauditor.py -t 192.168.1.1 -a "--min-rate 500 --max-rate 1000 -sV"
+```
 
-# Quick scan (top 1000 ports)
+##### Quick scan (top 1000 ports)
+```
 sudo python3 netauditor.py -t 192.168.1.1 -p - -a "-sV -T4"
 ```
 
+
 ### Command-Line Arguments
 
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--target` | `-t` | Single target to scan (IP or domain) | None |
-| `--file` | `-f` | File containing list of targets (one per line) | None |
-| `--ports` | `-p` | Port range to scan | 1-65535 |
-| `--arguments` | `-a` | Additional nmap arguments | `--min-rate 1100 --max-rate 2550 -sV` |
+| Argument      | Short | Description                                    | Default                               |
+| ------------- | ----- | ---------------------------------------------- | ------------------------------------- |
+| `--target`    | `-t`  | Single target to scan (IP or domain)           | None                                  |
+| `--file`      | `-f`  | File containing list of targets (one per line) | None                                  |
+| `--ports`     | `-p`  | Port range to scan                             | 1-65535                               |
+| `--arguments` | `-a`  | Additional nmap arguments                      | `--min-rate 1100 --max-rate 2550 -sV` |
 
 ## 📁 Output Structure
 ```
@@ -193,21 +231,9 @@ sudo python3 netauditor.py -t 192.168.1.1 -p - -a "-sV -T4"
         ├── ssh_vulnerable_ciphers.png
         └── ssl_vulnerable_port_<port>.png
 
-🔍 What Gets Detected
-SSH Vulnerabilities
+```
 
-    Weak KEX algorithms
-    Weak MAC algorithms
-    Weak key algorithms
-    Algorithms requiring removal/change
-
-SSL/TLS Vulnerabilities
-
-    Deprecated protocols (SSLv2, SSLv3, TLS 1.0, TLS 1.1)
-    CBC ciphers (vulnerable to padding oracle attacks)
-    Known vulnerabilities (BEAST, POODLE, Heartbleed, etc.)
-
-⚠️ Important Notes
+# ⚠️ Important Notes
 Permissions
 
     Nmap requires root/sudo for SYN scans and service detection
@@ -224,8 +250,14 @@ Performance Tips
 
 
 # Always run with sudo
-sudo python3 netauditor.py -t <target>
+If the environment is a virtual one use this command  or the correct one considering the path:
+
 ```
+sudo /home/x/Documents/Python/python/bin/python3 /home/x/Documents/Python/NetAuditor.py -t 192.168.1.1
+```
+
+
+
 
 ##  Example Output
 ```
@@ -262,8 +294,10 @@ Generating screenshots for 192.168.1.1
 ==================================================
 Screenshot generated: screenshots/192.168.1.1/ssh_vulnerable_ciphers.png
 Screenshot generated: screenshots/192.168.1.1/ssl_vulnerable_port_443.png
+```
 
- Contributing
+
+ # Contributing
 
 Feel free to submit issues, fork the repository, and create pull requests for any improvements.
 📝 License
@@ -274,7 +308,6 @@ This tool is provided as-is for educational and authorized security testing purp
     Uses nmap for port scanning
     Uses ssh-audit for SSH analysis
     Uses testssl.sh for SSL/TLS testing
-    Built with Python and ❤️
 
 Happy Auditing! 
 
