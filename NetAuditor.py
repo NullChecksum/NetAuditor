@@ -127,7 +127,7 @@ def extract_ssh_ciphers(ssh_file, port, target):
 def extract_ssl_vulnerabilities(ssl_file, target, port):
     """
     Estrae da testssl:
-    1. Paragrafo protocolli SSL/TLS SE almeno uno è "offered" (deprecated/weak)
+    1. Paragrafo protocolli SSL/TLS SE almeno uno è "offered"
     2. Cipher con CBC nel nome (con header della versione TLS)
     3. Paragrafo vulnerabilità con solo le righe "VULNERABLE"
     Mantiene i colori ANSI
@@ -141,7 +141,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
         # ========== SEZIONE 1: Protocolli SSL/TLS ==========
         protocols_section = []
         in_protocols = False
-        has_offered_deprecated = False
+        has_offered = False
         
         for i, line in enumerate(lines):
             if 'SSLv2' in line and ('not offered' in line or 'offered' in line):
@@ -152,16 +152,15 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
             if in_protocols:
                 protocols_section.append(line)
                 
-                # se c'è almeno un protcollo offered
+                # Se c'è almeno un protocollo offered (qualsiasi)
                 if 'offered' in line and 'not offered' not in line:
-                    if any(proto in line for proto in ['SSLv2', 'SSLv3', 'TLS 1 ', 'TLS 1.1']):
-                        has_offered_deprecated = True
+                    has_offered = True
                 
                 if 'Testing cipher categories' in line:
                     break
         
-        if has_offered_deprecated and protocols_section:
-            extracted_sections.append("########## SSL/TLS Protocols (Deprecated Offered) ##########\n\n")
+        if has_offered and protocols_section:
+            extracted_sections.append("########## SSL/TLS Protocols ##########\n\n")
             extracted_sections.extend(protocols_section)
             extracted_sections.append("\n")
         
@@ -217,6 +216,28 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
                 if i+1 < len(lines) and line.strip() == '' and lines[i+1].strip() == '':
                     break
                 
+                # Caso 1: CVE nel nome (es: BEAST) con VULNERABLE nella riga successiva
+                if 'CVE-' in line and i+1 < len(lines):
+                    next_line = lines[i+1]
+                    if 'VULNERABLE' in next_line and 'not vulnerable' not in next_line.lower():
+                        vulnerabilities.append(line)  # Nome vulnerabilità
+                        vulnerabilities.append(next_line)  # Riga VULNERABLE
+                        processed_indices.add(i)
+                        processed_indices.add(i+1)
+                        
+                        # Righe indentate successive
+                        j = i + 2
+                        while j < len(lines):
+                            indent_line = lines[j]
+                            if len(indent_line) - len(indent_line.lstrip()) > 30:
+                                vulnerabilities.append(indent_line)
+                                processed_indices.add(j)
+                                j += 1
+                            else:
+                                break
+                        continue
+                
+                # Caso 2: VULNERABLE sulla stessa riga
                 if 'VULNERABLE' in line and 'not vulnerable' not in line.lower():
                     vulnerabilities.append(line)
                     processed_indices.add(i)
@@ -231,6 +252,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
                         else:
                             break
                 
+                # Caso 3: Riga normale seguita da VULNERABLE indentato
                 elif i+1 < len(lines):
                     next_line = lines[i+1]
                     if ('VULNERABLE' in next_line and 
@@ -273,7 +295,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
     except Exception as e:
         print(f'Exception in extract_ssl_vulnerabilities: {e}')
         return False
-
+        
 def extract_nmap_evidence(nmap_file, target):
     try:
         with open(nmap_file, 'r') as file:
@@ -436,7 +458,249 @@ def generate_evidence_screenshots(target):
     print(f"Screenshots completed for {target}")
     print(f"{'='*50}\n")
 
-
+def recap(targets):
+    """
+    Genera report con:
+    - SSH: IP porta versione (da nmap_scan)
+    - HTTP: IP porta (da nmap_scan)
+    - SSL: IP:porta + vulnerabilità (da ssl_scan files)
+    - TLS 1.0/1.1: IP:porta se offerti
+    - CBC ciphers obsoleti
+    """
+    try:
+        output_file = 'audit_report.txt'
+        
+        ssh_entries = []
+        http_entries = []
+        ssl_entries = []
+        tls_weak_entries = []
+        
+        # ========== AUTO-DETECT TARGETS DA DIRECTORY *_Scans ==========
+        detected_targets = []
+        for item in os.listdir('.'):
+            if os.path.isdir(item) and item.endswith('_Scans'):
+                target = item.replace('_Scans', '')
+                detected_targets.append(target)
+        
+        if not detected_targets:
+            print('[!] No *_Scans directories found in current directory')
+            return
+        
+        print(f'[*] Found {len(detected_targets)} targets: {detected_targets}')
+        
+        for target in detected_targets:
+            scan_dir = f'{target}_Scans'
+            
+            if not os.path.exists(scan_dir):
+                print(f'[!] Directory {scan_dir} not found for {target}')
+                continue
+            
+            # ========== SSH e HTTP da nmap_scan ==========
+            nmap_file = f'{scan_dir}/nmap_scan_{target}.txt'
+            if os.path.exists(nmap_file):
+                with open(nmap_file, 'r') as f:
+                    for line in f:
+                        if 'Port:' in line and 'open' in line:
+                            parts = line.split()
+                            port = parts[1] if len(parts) > 1 else 'unknown'
+                            service = parts[5].replace('Service:', '') if len(parts) > 5 else 'unknown'
+                            product = ' '.join(parts[7:]) if len(parts) > 7 else 'unknown'
+                            
+                            # SSH
+                            if 'ssh' in service.lower():
+                                ssh_entries.append(f"{target} {port} {product.strip()}")
+                            
+                            # HTTP
+                            if 'http' in service.lower():
+                                http_entries.append(f"{target} {port}")
+            
+            # ========== SSL vulnerabilities + TLS 1.0/1.1 ==========
+            for filename in os.listdir(scan_dir):
+                if filename.startswith('ssl_scan_') and filename.endswith('.txt'):
+                    # Estrai porta dal nome file: ssl_scan_IP_PORT.txt
+                    match = re.search(r'ssl_scan_.*_(\d+)\.txt', filename)
+                    if match:
+                        port = match.group(1)
+                        ssl_file = f'{scan_dir}/{filename}'
+                        
+                        with open(ssl_file, 'r') as f:
+                            lines = f.readlines()
+                        
+                        # Cerca vulnerabilità VULNERABLE (ignora "not vulnerable")
+                        vulnerabilities = []
+                        has_beast = False
+                        has_sweet32 = False
+                        has_poodle = False
+                        has_tls10 = False
+                        has_tls11 = False
+                        has_sslv2 = False
+                        has_sslv3 = False
+                        has_cbc_obsolete = False
+                        in_vuln_section = False
+                        i = 0
+                        
+                        while i < len(lines):
+                            line = lines[i]
+                            clean_line = re.sub(r'\033\[[0-9;]+m', '', line).strip()
+                            
+                            # ===== CHECK SEZIONE PROTOCOLLI SSL/TLS =====
+                            # SSLv2 e SSLv3
+                            if 'SSLv2' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
+                                has_sslv2 = True
+                            if 'SSLv3' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
+                                has_sslv3 = True
+                            
+                            # TLS 1.0 - cerchiamo "TLS 1 " (con spazio dopo) per evitare TLS 1.1, 1.2, 1.3
+                            words = clean_line.split()
+                            if len(words) >= 2:
+                                if words[0] == 'TLS' and words[1] == '1' and 'offered' in clean_line and 'not offered' not in clean_line:
+                                    has_tls10 = True
+                            
+                            # TLS 1.1
+                            if 'TLS 1.1' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
+                                has_tls11 = True
+                            
+                            # ===== CHECK CBC CIPHERS OBSOLETI =====
+                            if 'Obsoleted CBC ciphers' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
+                                has_cbc_obsolete = True
+                                vulnerabilities.append(clean_line)
+                            
+                            # ===== CHECK SEZIONE VULNERABILITIES =====
+                            if 'Testing vulnerabilities' in clean_line:
+                                in_vuln_section = True
+                                i += 1
+                                continue
+                            
+                            if in_vuln_section:
+                                # Fine sezione (doppia riga vuota)
+                                if clean_line == '' and i+1 < len(lines):
+                                    next_clean = re.sub(r'\033\[[0-9;]+m', '', lines[i+1]).strip()
+                                    if next_clean == '':
+                                        in_vuln_section = False
+                                        i += 1
+                                        continue
+                                
+                                # CASO 1: VULNERABLE sulla stessa riga
+                                if 'VULNERABLE' in clean_line and 'not vulnerable' not in clean_line.lower():
+                                    vulnerabilities.append(clean_line)
+                                    
+                                    # Check specifiche vulnerabilità
+                                    if 'BEAST' in clean_line.upper():
+                                        has_beast = True
+                                    if 'SWEET32' in clean_line.upper():
+                                        has_sweet32 = True
+                                    if 'POODLE' in clean_line.upper():
+                                        has_poodle = True
+                                
+                                # CASO 2: Nome vulnerabilità su una riga, VULNERABLE sulla successiva
+                                elif i+1 < len(lines):
+                                    next_line = lines[i+1]
+                                    next_clean = re.sub(r'\033\[[0-9;]+m', '', next_line).strip()
+                                    
+                                    if 'VULNERABLE' in next_clean and 'not vulnerable' not in next_clean.lower():
+                                        # Aggiungi entrambe le righe
+                                        vulnerabilities.append(clean_line)
+                                        vulnerabilities.append(next_clean)
+                                        
+                                        # Check specifiche vulnerabilità
+                                        combined = clean_line + next_clean
+                                        if 'BEAST' in combined.upper():
+                                            has_beast = True
+                                        if 'SWEET32' in combined.upper():
+                                            has_sweet32 = True
+                                        if 'POODLE' in combined.upper():
+                                            has_poodle = True
+                                        
+                                        i += 1  # Salta la prossima riga
+                            
+                            i += 1
+                        
+                        # ========== Aggiungi entry SSL ==========
+                        if vulnerabilities or has_tls10 or has_tls11 or has_sslv2 or has_sslv3 or has_cbc_obsolete:
+                            ssl_entries.append(f"{target}:{port}")
+                            
+                            if vulnerabilities:
+                                for vuln in vulnerabilities:
+                                    ssl_entries.append(f"  {vuln}")
+                                
+                                # Aggiungi flag vulnerabilità specifiche
+                                if has_beast:
+                                    ssl_entries.append(f"  [!] BEAST vulnerability detected")
+                                if has_sweet32:
+                                    ssl_entries.append(f"  [!] SWEET32 vulnerability detected")
+                                if has_poodle:
+                                    ssl_entries.append(f"  [!] POODLE vulnerability detected")
+                                if has_cbc_obsolete:
+                                    ssl_entries.append(f"  [!] Obsoleted CBC ciphers detected")
+                            
+                            # Protocolli deboli
+                            if has_sslv2 or has_sslv3 or has_tls10 or has_tls11:
+                                weak_protos = []
+                                if has_sslv2:
+                                    weak_protos.append("SSLv2")
+                                if has_sslv3:
+                                    weak_protos.append("SSLv3")
+                                if has_tls10:
+                                    weak_protos.append("TLS 1.0")
+                                if has_tls11:
+                                    weak_protos.append("TLS 1.1")
+                                ssl_entries.append(f"  [WEAK PROTOCOLS] {', '.join(weak_protos)} offered")
+                        
+                        # ========== Aggiungi entry TLS deboli ==========
+                        if has_sslv2 or has_sslv3 or has_tls10 or has_tls11:
+                            weak_protocols = []
+                            if has_sslv2:
+                                weak_protocols.append("SSLv2")
+                            if has_sslv3:
+                                weak_protocols.append("SSLv3")
+                            if has_tls10:
+                                weak_protocols.append("TLS 1.0")
+                            if has_tls11:
+                                weak_protocols.append("TLS 1.1")
+                            tls_weak_entries.append(f"{target}:{port} - {', '.join(weak_protocols)} offered")
+        
+        # ========== Scrivi report ==========
+        with open(output_file, 'w') as f:
+            f.write("################### AUDIT REPORT ###################\n\n")
+            
+            # SSH
+            f.write("========== SSH ==========\n")
+            if ssh_entries:
+                for entry in ssh_entries:
+                    f.write(f"{entry}\n")
+            else:
+                f.write("No SSH services found\n")
+            
+            # HTTP
+            f.write("\n========== HTTP ==========\n")
+            if http_entries:
+                for entry in http_entries:
+                    f.write(f"{entry}\n")
+            else:
+                f.write("No HTTP services found\n")
+            
+            # SSL Vulnerabilities
+            f.write("\n========== SSL VULNERABILITIES ==========\n")
+            if ssl_entries:
+                for entry in ssl_entries:
+                    f.write(f"{entry}\n")
+            else:
+                f.write("No SSL vulnerabilities found\n")
+            
+            # TLS/SSL Weak Protocols
+            f.write("\n========== WEAK SSL/TLS PROTOCOLS ==========\n")
+            if tls_weak_entries:
+                for entry in tls_weak_entries:
+                    f.write(f"{entry}\n")
+            else:
+                f.write("No weak SSL/TLS protocols offered\n")
+        
+        print(f"\n{'='*50}")
+        print(f"[✓] Report generated: {output_file}")
+        print(f"{'='*50}\n")
+        
+    except Exception as e:
+        print(f'Exception in recap(): {e}')
 
 
 #Main function, sotto logica di esecuzione
@@ -446,21 +710,30 @@ def main():
     parser.add_argument("-t","--target", help="Target to scan")
     parser.add_argument("-f","--file", help="File of targets to scan")
     parser.add_argument("-a","--arguments", help="Additional nmap arguments", default="--min-rate 1100 --max-rate 2550 -sV")
-    parser.add_argument("-p","--ports", help="Ports to scan", default="1-65535")  # <-- OPZIONALE, cristo, scansioniamo tutto daje
+    parser.add_argument("-p","--ports", help="Ports to scan", default="1-65535")
+    parser.add_argument("-m","--mode", help="mode: s=scan (default), r=recap", default="s") 
+
 
     args = parser.parse_args()
     arguments = args.arguments
-    target =args.target
+    target = args.target
     ports = args.ports
     file = args.file
+    mode = args.mode
 
     targets = []
+
+    # ========== MODE RECAP ==========
+    if mode == 'r':
+        print('[*] Recap mode activated - analyzing existing scans')
+        recap([])
+        sys.exit(0)
 
     if file == None and target == None:
         print(f'A file (-f) or a target (-t) must be provided, use "-h" for help')
         sys.exit(1) 
 
-    if file != None :
+    if file != None:
         with open(file) as f:
             lines = f.readlines()
             for line in lines:
@@ -468,6 +741,7 @@ def main():
                 targets.append(ips)
     else:
         targets.append(target)
+
 
 
     for target in targets:
@@ -487,21 +761,19 @@ def main():
             lines = f.readlines()
             for line in lines:
                 if 'ssh' in line.lower() and 'open' in line.lower():
-                    words = line.split() # ci serve una lista per la porta, il target rimane lo stesso
-                    #['Port:', '22', 'State:', 'open', 'Service:ssh', 'Product:', 'OpenSSH', '8.2p1', 'Ubuntu']
-
+                    words = line.split()
                     port = words[1]
                     ssh_audit(target, port, output_dir=output_dir)
                     print(f'SSH Audit completed for {target} on port {port}\n')
 
-        # 3) testssl scan su ogni porta ssl trovata , no default ssl ports
+        # 3) testssl scan su ogni porta ssl trovata
         print('3 - Testssl Audit')
         ssl_ports_found = []
         with open(f'{output_dir}/nmap_scan_{target}.txt', 'r') as f:
             lines = f.readlines()
             for line in lines:
                 if ('ssl' in line.lower() or 'https' in line.lower()) and 'open' in line.lower():
-                    ssl_ports_found.append(line.split()[1]) # porta
+                    ssl_ports_found.append(line.split()[1])
 
         for port in ssl_ports_found:
             testssl_scan(target, port, output_dir=output_dir)
@@ -519,7 +791,7 @@ def main():
         for port in ssh_ports_found:
             ssh_audit_file = f'{output_dir}/ssh_audit_{target}_{port}.txt'
             if os.path.exists(ssh_audit_file):
-                extract_ssh_ciphers(ssh_audit_file,port, target)
+                extract_ssh_ciphers(ssh_audit_file, port, target)
             else:
                 print(f'SSH audit file {ssh_audit_file} does not exist. Skipping extraction.')    
 
@@ -541,8 +813,6 @@ def main():
         print('\n5 - screenshots time!')
         # 7) Generazione screenshot evidenze
         generate_evidence_screenshots(target)
-
-
 
 if __name__ == "__main__":
     main()
