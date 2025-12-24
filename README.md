@@ -21,7 +21,7 @@ NetAuditor is an automated network security assessment tool that performs compre
      Support for single target or batch file processing
 
 
-# 🔧 Installation
+#  Installation
 Prerequisites
 
 System Requirements:
