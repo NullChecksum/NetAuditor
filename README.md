@@ -1,23 +1,25 @@
 NetAuditor is an automated network security assessment tool that performs comprehensive scanning, auditing, and evidence collection for security assessments and penetration testing.
 
-⚙️ Pipeline:
+ Pipeline:
 
     Nmap - Port scanning and service detection
     SSH-Audit - SSH configuration and cipher analysis
     TestSSL - SSL/TLS vulnerability assessment
     Evidence Extraction - Automated vulnerability filtering
     Screenshots - Visual evidence generation with ANSI color preservation
+    Audit Report - Generate an audit report for ssh / http /ciphers
+    
+ Features
 
-⚙️ Features
+     Automated multi-target scanning
+     SSH cipher vulnerability detection
+     SSL/TLS protocol and cipher analysis
+     Deprecated protocol detection (SSLv2, SSLv3, TLS 1.0, TLS 1.1)
+     CBC cipher identification
+     Automated evidence extraction
+     Screenshot generation with color preservation
+     Support for single target or batch file processing
 
-    ✅ Automated multi-target scanning
-    ✅ SSH cipher vulnerability detection
-    ✅ SSL/TLS protocol and cipher analysis
-    ✅ Deprecated protocol detection (SSLv2, SSLv3, TLS 1.0, TLS 1.1)
-    ✅ CBC cipher identification
-    ✅ Automated evidence extraction
-    ✅ Screenshot generation with color preservation
-    ✅ Support for single target or batch file processing
 
 # 🔧 Installation
 Prerequisites
@@ -212,7 +214,7 @@ sudo python3 netauditor.py -t 192.168.1.1 -p - -a "-sV -T4"
 | `--ports`     | `-p`  | Port range to scan                             | 1-65535                               |
 | `--arguments` | `-a`  | Additional nmap arguments                      | `--min-rate 1100 --max-rate 2550 -sV` |
 
-## 📁 Output Structure
+##  Output Structure
 ```
 .
 ├── <target>_Scans/              # Raw scan results
@@ -233,7 +235,7 @@ sudo python3 netauditor.py -t 192.168.1.1 -p - -a "-sV -T4"
 
 ```
 
-# ⚠️ Important Notes
+# ! ⚠️ Important Notes !
 Permissions
 
     Nmap requires root/sudo for SYN scans and service detection
@@ -300,7 +302,7 @@ Screenshot generated: screenshots/192.168.1.1/ssl_vulnerable_port_443.png
  # Contributing
 
 Feel free to submit issues, fork the repository, and create pull requests for any improvements.
-📝 License
+ License
 
 This tool is provided as-is for educational and authorized security testing purposes only.
  Credits
