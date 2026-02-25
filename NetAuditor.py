@@ -29,14 +29,13 @@ def print_banner():
     ──────────────────────────────────────
 """
     print(banner)
-# scansione target
 def scanner_target(target, ports='', arguments='', output_dir='.'):
     try:
-        nm.scan(target, ports, arguments=arguments) # scansioniamo tutte le porte
+        nm.scan(target, ports, arguments=arguments) 
         output_file = f'{output_dir}/nmap_scan_{target}.txt' 
         
         with open(output_file, 'w') as f:
-            f.write(f"# Nmap scan results for {target}\n") #creo anche se vuoto per evitare err. riga 432 
+            f.write(f"# Nmap scan results for {target}\n") 
         for host in nm.all_hosts():
             print(f'Host: {host} - State: {nm[host].state()}')
             for proto in nm[host].all_protocols():
@@ -46,7 +45,7 @@ def scanner_target(target, ports='', arguments='', output_dir='.'):
                     port_info = nm[host][proto][port]
                     state = port_info.get('state', 'unknown')
                     product = port_info.get('product', 'unknown')
-                    service = port_info.get('name', 'unknown') #Servizio = name --##-- idioti, come fahreineit e celsius, no comment
+                    service = port_info.get('name', 'unknown')
                     version = port_info.get('version', 'unknown')
                     tunnel = port_info.get('tunnel', '')
                     print(f"Port: {port:<6} State: {state:<6} Service: {service:<16} Tunnel: {tunnel:<6} Product: {product} {version}") # print a schermo
@@ -62,7 +61,6 @@ def scanner_target(target, ports='', arguments='', output_dir='.'):
     except Exception as e:
         print(f'Exception occurred, nmap SCAN: {e}')
 
-# Se esiste una porta ssh, scansioniamo con ssh-audit per recuperare ciphers
 def ssh_audit(target, port='', output_dir='.'):
     try:
         output_file = f'{output_dir}/ssh_audit_{target}_{port}.txt'
@@ -96,14 +94,13 @@ def extract_ssh_ciphers(ssh_file, port, target):
             lines = f.readlines()
         
         for line in lines:
-            # Cerca i pattern SENZA .lower() perché i codici ANSI sono case-sensitive cristo
             if any(pattern in line for pattern in [
                 'kex algorithm to remove',
                 'mac algorithm to remove', 
                 'key algorithm to remove',
                 'key algorithm to change'
             ]):
-                extracted.append(line)  # NON usare .strip() per preservare i colori ANSI, basta chiedo a claude per i prossimi regex e img, ssh colorato in evidenza
+                extracted.append(line) 
         
         if not extracted:
             print('No relevant SSH cipher information found. Verify at least one file.')
@@ -138,7 +135,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
         
         extracted_sections = []
         
-        # ========== SEZIONE 1: Protocolli SSL/TLS ==========
+        # ========== SSL/TLS ==========
         protocols_section = []
         in_protocols = False
         has_offered = False
@@ -152,7 +149,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
             if in_protocols:
                 protocols_section.append(line)
                 
-                # Se c'è almeno un protocollo offered (qualsiasi)
+               
                 if 'offered' in line and 'not offered' not in line:
                     has_offered = True
                 
@@ -164,7 +161,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
             extracted_sections.extend(protocols_section)
             extracted_sections.append("\n")
         
-        # ========== SEZIONE 2: CBC Ciphers ==========
+        # ========== CBC Ciphers ==========
         cbc_ciphers = []
         in_cipher_section = False
         cipher_header_lines = []
@@ -198,7 +195,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
             extracted_sections.extend(cbc_ciphers)
             extracted_sections.append("\n")
         
-        # ========== SEZIONE 3: Vulnerabilità ==========
+        # ========== Vulns ==========
         vulnerabilities = []
         in_vuln_section = False
         processed_indices = set()
@@ -216,7 +213,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
                 if i+1 < len(lines) and line.strip() == '' and lines[i+1].strip() == '':
                     break
                 
-                # Caso 1: CVE nel nome (es: BEAST) con VULNERABLE nella riga successiva
+        
                 if 'CVE-' in line and i+1 < len(lines):
                     next_line = lines[i+1]
                     if 'VULNERABLE' in next_line and 'not vulnerable' not in next_line.lower():
@@ -225,7 +222,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
                         processed_indices.add(i)
                         processed_indices.add(i+1)
                         
-                        # Righe indentate successive
+                        
                         j = i + 2
                         while j < len(lines):
                             indent_line = lines[j]
@@ -237,7 +234,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
                                 break
                         continue
                 
-                # Caso 2: VULNERABLE sulla stessa riga
+               
                 if 'VULNERABLE' in line and 'not vulnerable' not in line.lower():
                     vulnerabilities.append(line)
                     processed_indices.add(i)
@@ -252,7 +249,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
                         else:
                             break
                 
-                # Caso 3: Riga normale seguita da VULNERABLE indentato
+                
                 elif i+1 < len(lines):
                     next_line = lines[i+1]
                     if ('VULNERABLE' in next_line and 
@@ -276,7 +273,7 @@ def extract_ssl_vulnerabilities(ssl_file, target, port):
             extracted_sections.extend(vulnerabilities)
             extracted_sections.append("\n")
         
-        # ========== Salva risultati ==========
+       
         if not extracted_sections:
             print(f'  ○ No SSL vulnerabilities found on {target}:{port}')
             return False
@@ -313,10 +310,10 @@ def extract_nmap_evidence(nmap_file, target):
                     elif part == 'Product:':
                         product = ' '.join(parts[i+1:]).strip()
 
-                # Colore ANSI verde per il prodotto ( grazie claude )
+                
                 product_colored = f"\033[1;32m{product}\033[0m" if product else "\033[1;31mUnknown\033[0m"
                 
-                # Formatta con evidenziazione
+               
                 formatted = f"\n{'='*70}\n"
                 formatted += f"  🔹 IP: {target}\n"
                 formatted += f"  🔹 PORT: {port}\n"
@@ -330,7 +327,7 @@ def extract_nmap_evidence(nmap_file, target):
             print(f'  ○ No SSH ports found for {target}')
             return False
         
-        # Salva evidenze
+        
         output_dir = f'evidence/{target}'
         os.makedirs(output_dir, exist_ok=True)
         output_file = f'{output_dir}/nmap_ssh_ports.txt'
@@ -362,7 +359,7 @@ def ansi_to_image(txt_file, output_png, width=1700, height=902):
         except:
             font = ImageFont.load_default()
         
-        # Mappa colori ANSI ( grazie claude, stiamo piangendo in polacco con sti c* di colori e spazi in x*y su img)
+       
         ansi_colors = {
             '\033[0m': '#ffffff',      # Reset/bianco
             '\033[1;32m': '#00ff00',   # Verde brillante
@@ -381,24 +378,24 @@ def ansi_to_image(txt_file, output_png, width=1700, height=902):
             if y > height - 40:
                 break
             
-            # Rimuovi newline
+            
             line = line.rstrip('\n')
             
-            # Trova segmenti con colori ANSI
+            
             segments = []
             current_color = '#ffffff'
             current_text = ''
             
             i = 0
             while i < len(line):
-                # Cerca codice ANSI
+              
                 if line[i:i+2] == '\033[':
-                    # Salva testo precedente
+                  
                     if current_text:
                         segments.append((current_text, current_color))
                         current_text = ''
                     
-                    # Trova fine codice ANSI
+                   
                     end = line.find('m', i)
                     if end != -1:
                         ansi_code = line[i:end+1]
@@ -410,15 +407,15 @@ def ansi_to_image(txt_file, output_png, width=1700, height=902):
                     current_text += line[i]
                     i += 1
             
-            # Aggiungi ultimo segmento
+            
             if current_text:
                 segments.append((current_text, current_color))
             
-            # Disegna i segmenti
+           
             x = 20
             for text, color in segments:
                 draw.text((x, y), text, fill=color, font=font)
-                # Calcola larghezza del testo per posizionare il prossimo
+                
                 bbox = draw.textbbox((x, y), text, font=font)
                 x = bbox[2]
             
@@ -446,7 +443,7 @@ def generate_evidence_screenshots(target):
     print(f"Generating screenshots for {target}")
     print(f"{'='*50}\n")
     
-    # prendiamo tutti i file di evidenze al momento, direi che va bene
+   
     for filename in os.listdir(evidence_dir):
         if filename.endswith('.txt'):
             input_file = f'{evidence_dir}/{filename}'
@@ -475,7 +472,7 @@ def recap(targets):
         ssl_entries = []
         tls_weak_entries = []
         
-        # ========== AUTO-DETECT TARGETS DA DIRECTORY *_Scans ==========
+        
         detected_targets = []
         for item in os.listdir('.'):
             if os.path.isdir(item) and item.endswith('_Scans'):
@@ -517,7 +514,7 @@ def recap(targets):
             # ========== SSL vulnerabilities + TLS 1.0/1.1 ==========
             for filename in os.listdir(scan_dir):
                 if filename.startswith('ssl_scan_') and filename.endswith('.txt'):
-                    # Estrai porta dal nome file: ssl_scan_IP_PORT.txt
+                    
                     match = re.search(r'ssl_scan_.*_(\d+)\.txt', filename)
                     if match:
                         port = match.group(1)
@@ -526,7 +523,7 @@ def recap(targets):
                         with open(ssl_file, 'r') as f:
                             lines = f.readlines()
                         
-                        # Cerca vulnerabilità VULNERABLE (ignora "not vulnerable")
+                        
                         vulnerabilities = []
                         has_beast = False
                         has_sweet32 = False
@@ -543,20 +540,19 @@ def recap(targets):
                             line = lines[i]
                             clean_line = re.sub(r'\033\[[0-9;]+m', '', line).strip()
                             
-                            # ===== CHECK SEZIONE PROTOCOLLI SSL/TLS =====
-                            # SSLv2 e SSLv3
+                           
                             if 'SSLv2' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
                                 has_sslv2 = True
                             if 'SSLv3' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
                                 has_sslv3 = True
                             
-                            # TLS 1.0 - cerchiamo "TLS 1 " (con spazio dopo) per evitare TLS 1.1, 1.2, 1.3
+                           
                             words = clean_line.split()
                             if len(words) >= 2:
                                 if words[0] == 'TLS' and words[1] == '1' and 'offered' in clean_line and 'not offered' not in clean_line:
                                     has_tls10 = True
                             
-                            # TLS 1.1
+                            
                             if 'TLS 1.1' in clean_line and 'offered' in clean_line and 'not offered' not in clean_line:
                                 has_tls11 = True
                             
@@ -580,7 +576,7 @@ def recap(targets):
                                         i += 1
                                         continue
                                 
-                                # CASO 1: VULNERABLE sulla stessa riga
+                               
                                 if 'VULNERABLE' in clean_line and 'not vulnerable' not in clean_line.lower():
                                     vulnerabilities.append(clean_line)
                                     
@@ -598,11 +594,11 @@ def recap(targets):
                                     next_clean = re.sub(r'\033\[[0-9;]+m', '', next_line).strip()
                                     
                                     if 'VULNERABLE' in next_clean and 'not vulnerable' not in next_clean.lower():
-                                        # Aggiungi entrambe le righe
+                                        
                                         vulnerabilities.append(clean_line)
                                         vulnerabilities.append(next_clean)
                                         
-                                        # Check specifiche vulnerabilità
+                                      
                                         combined = clean_line + next_clean
                                         if 'BEAST' in combined.upper():
                                             has_beast = True
@@ -623,7 +619,7 @@ def recap(targets):
                                 for vuln in vulnerabilities:
                                     ssl_entries.append(f"  {vuln}")
                                 
-                                # Aggiungi flag vulnerabilità specifiche
+                               
                                 if has_beast:
                                     ssl_entries.append(f"  [!] BEAST vulnerability detected")
                                 if has_sweet32:
@@ -633,7 +629,7 @@ def recap(targets):
                                 if has_cbc_obsolete:
                                     ssl_entries.append(f"  [!] Obsoleted CBC ciphers detected")
                             
-                            # Protocolli deboli
+                            
                             if has_sslv2 or has_sslv3 or has_tls10 or has_tls11:
                                 weak_protos = []
                                 if has_sslv2:
@@ -646,7 +642,7 @@ def recap(targets):
                                     weak_protos.append("TLS 1.1")
                                 ssl_entries.append(f"  [WEAK PROTOCOLS] {', '.join(weak_protos)} offered")
                         
-                        # ========== Aggiungi entry TLS deboli ==========
+                        
                         if has_sslv2 or has_sslv3 or has_tls10 or has_tls11:
                             weak_protocols = []
                             if has_sslv2:
@@ -659,7 +655,7 @@ def recap(targets):
                                 weak_protocols.append("TLS 1.1")
                             tls_weak_entries.append(f"{target}:{port} - {', '.join(weak_protocols)} offered")
         
-        # ========== Scrivi report ==========
+        # ========== report ==========
         with open(output_file, 'w') as f:
             f.write("################### AUDIT REPORT ###################\n\n")
             
